@@ -1,8 +1,6 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { db } from '$lib/db/client';
-import { tinyWin } from '$lib/db/schema';
-import { eq } from 'drizzle-orm';
+import { mapTinyWin, supabaseAdmin } from '$lib/server/supabase-client';
 import { normalizeTitle, parseCompletedAt, sanitizeText } from '$lib/server/tinywin-utils';
 
 function parseId(idParam?: string) {
@@ -32,22 +30,27 @@ export const PUT: RequestHandler = async ({ params, request }) => {
     return json({ error: (error as Error).message }, { status: 400 });
   }
 
-  const [win] = await db
-    .update(tinyWin)
-    .set({
+  const { data, error } = await supabaseAdmin
+    .from('tiny-win')
+    .update({
       title: normalizedTitle,
       description: sanitizeText(description),
       category: sanitizeText(category),
-      completedAt: completedAtValue
+      completed_at: completedAtValue.toISOString()
     })
-    .where(eq(tinyWin.id, id))
-    .returning();
+    .eq('id', id)
+    .select()
+    .single();
 
-  if (!win) {
+  if (error) {
+    return json({ error: error.message }, { status: 500 });
+  }
+
+  if (!data) {
     return json({ error: 'not-found' }, { status: 404 });
   }
 
-  return json(win);
+  return json(mapTinyWin(data));
 };
 
 export const DELETE: RequestHandler = async ({ params }) => {
@@ -58,9 +61,18 @@ export const DELETE: RequestHandler = async ({ params }) => {
     return json({ error: (error as Error).message }, { status: 400 });
   }
 
-  const [win] = await db.delete(tinyWin).where(eq(tinyWin.id, id)).returning();
+  const { data, error } = await supabaseAdmin
+    .from('tiny-win')
+    .delete()
+    .eq('id', id)
+    .select()
+    .single();
 
-  if (!win) {
+  if (error) {
+    return json({ error: error.message }, { status: 500 });
+  }
+
+  if (!data) {
     return json({ error: 'not-found' }, { status: 404 });
   }
 

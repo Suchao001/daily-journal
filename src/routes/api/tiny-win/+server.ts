@@ -1,17 +1,20 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { db } from '$lib/db/client';
-import { tinyWin } from '$lib/db/schema';
-import { desc } from 'drizzle-orm';
+import { mapTinyWin, supabaseAdmin } from '$lib/server/supabase-client';
 import { normalizeTitle, parseCompletedAt, sanitizeText } from '$lib/server/tinywin-utils';
 
 export const GET: RequestHandler = async () => {
-  const wins = await db
-    .select()
-    .from(tinyWin)
-    .orderBy(desc(tinyWin.completedAt), desc(tinyWin.createdAt));
+  const { data, error } = await supabaseAdmin
+    .from('tiny-win')
+    .select('id, created_at, title, description, category, completed_at')
+    .order('completed_at', { ascending: false })
+    .order('created_at', { ascending: false });
 
-  return json(wins);
+  if (error) {
+    return json({ error: error.message }, { status: 500 });
+  }
+
+  return json((data ?? []).map(mapTinyWin));
 };
 
 export const POST: RequestHandler = async ({ request }) => {
@@ -25,15 +28,20 @@ export const POST: RequestHandler = async ({ request }) => {
     return json({ error: (error as Error).message }, { status: 400 });
   }
 
-  const [win] = await db
-    .insert(tinyWin)
-    .values({
+  const { data, error } = await supabaseAdmin
+    .from('tiny-win')
+    .insert({
       title: normalizedTitle,
       description: sanitizeText(description),
       category: sanitizeText(category),
-      completedAt: completedAtValue
+      completed_at: completedAtValue.toISOString()
     })
-    .returning();
+    .select()
+    .single();
 
-  return json(win, { status: 201 });
+  if (error) {
+    return json({ error: error.message }, { status: 500 });
+  }
+
+  return json(mapTinyWin(data), { status: 201 });
 };
